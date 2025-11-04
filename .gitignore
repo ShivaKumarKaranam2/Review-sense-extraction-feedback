@@ -1,0 +1,11 @@
+# Ignore virtual environment and other large folders
+infosys/lib/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+.env
+venv/
+*.log
