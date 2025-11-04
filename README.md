@@ -35,27 +35,26 @@ All user and prediction data are stored securely in a **SQLite database**, ensur
 ## 🚀 Setup Instructions
 
 ### 1️⃣ Clone the Repository
-```bash
-git clone https://github.com/yourusername/Infosys_ReviewSense.git
-cd Infosys_ReviewSense
-
+ bash
+`git clone https://github.com/yourusername/Infosys_ReviewSense.git
+cd Infosys_ReviewSense `
 
 ### 2️⃣ Create a Virtual Environment
-python -m venv infosys
-source infosys/bin/activate   # On macOS/Linux
-infosys\Scripts\activate      # On Windows
+`python -m venv infosys
+source infosys/bin/activate `  # On macOS/Linux
+`infosys\Scripts\activate  `    # On Windows
 
 ### 3️⃣ Install Dependencies
-pip install -r requirements.txt
+`pip install -r requirements.txt`
 
 ### 4️⃣ Run the Backend (FastAPI)
-uvicorn backend.main:app --reload
+`uvicorn backend.main:app --reload`
 
 
 The backend will start at: http://127.0.0.1:8000
 
 ### 5️⃣ Run the Frontend (Streamlit)
-streamlit run frontend/app.py
+`streamlit run frontend/app.py`
 
 
 The app will open in your browser at: http://localhost:8501
