@@ -1,0 +1,32 @@
+ipykernel
+# === Backend Core ===
+fastapi
+uvicorn
+python-multipart
+pydantic
+sqlalchemy
+passlib[argon2]
+python-jose[cryptography]
+
+# === Frontend ===
+streamlit
+requests
+pandas
+openpyxl
+
+# === NLP / Sentiment Analysis ===
+transformers
+torch
+scikit-learn
+numpy
+peft
+nltk.downloader 
+stopwords 
+wordnet omw-1.4
+
+
+# === Utilities ===
+python-dotenv
+aiofiles
+pydantic[email]
+
