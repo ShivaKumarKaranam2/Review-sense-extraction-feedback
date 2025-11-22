@@ -20,9 +20,8 @@ torch
 scikit-learn
 numpy
 peft
-nltk.downloader 
 stopwords 
-wordnet omw-1.4
+wordnet 
 
 
 # === Utilities ===
@@ -30,3 +29,8 @@ python-dotenv
 aiofiles
 pydantic[email]
 
+requests
+plotly
+numpy
+spacy
+python-multipart

@@ -35,6 +35,22 @@ def init_db():
         FOREIGN KEY(email) REFERENCES users(email)
     )
     ''')
+
+    # Table for Aspect-Based Sentiment Analysis
+    c.execute('''
+    CREATE TABLE IF NOT EXISTS aspect_sentiment_records (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT NOT NULL,
+        sentence TEXT NOT NULL,
+        aspect TEXT NOT NULL,
+        aspect_sentiment TEXT,
+        aspect_score REAL,
+        overall_sentiment TEXT,
+        overall_score REAL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(email) REFERENCES users(email)
+    )
+    ''')
     conn.commit()
     conn.close()
 
@@ -114,3 +130,64 @@ def save_batch_records(email: str, records: list):
     ''', [(email, o, c_text, lbl, score) for (o, c_text, lbl, score) in records])
     conn.commit()
     conn.close()
+
+    
+def save_aspect_sentiment_record(email: str, sentence: str, aspects: list, overall_sentiment: str, overall_score: float):
+    """
+    Save multiple aspect sentiment results for a single sentence.
+    Each aspect entry is stored as a separate row.
+    """
+    conn = get_conn()
+    c = conn.cursor()
+
+    for a in aspects:
+        c.execute('''
+        INSERT INTO aspect_sentiment_records 
+        (email, sentence, aspect, aspect_sentiment, aspect_score, overall_sentiment, overall_score)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            email,
+            sentence,
+            a["aspect"],
+            a["aspect_sentiment"],
+            a["aspect_score"],
+            overall_sentiment,
+            overall_score
+        ))
+
+    conn.commit()
+    conn.close()
+
+
+def get_user_stats(email: str):
+    conn = get_conn()
+    c = conn.cursor()
+
+    # Fetch all aspect-level sentiment records
+    c.execute("""
+        SELECT sentence, aspect, aspect_sentiment, aspect_score, overall_sentiment, overall_score
+        FROM aspect_sentiment_records
+        WHERE email = ?
+        ORDER BY created_at DESC
+    """, (email,))
+    
+    rows = c.fetchall()
+    conn.close()
+
+    # Build row list
+    stats = []
+    for r in rows:
+        stats.append({
+            "Sentence": r["sentence"],
+            "Aspect": r["aspect"],
+            "Aspect Sentiment": r["aspect_sentiment"],
+            "Aspect Score": r["aspect_score"],
+            "Overall Sentiment": r["overall_sentiment"],
+            "Overall Score": r["overall_score"]
+        })
+
+    # ⬅️ This is EXACTLY what frontend expects
+    return {
+        "total_records": len(stats),
+        "records": stats
+    }

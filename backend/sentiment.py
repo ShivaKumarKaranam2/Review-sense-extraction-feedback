@@ -1,15 +1,13 @@
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from backend.utils import clean_text
-from backend.database import save_sentiment_record
+from backend.database import save_sentiment_record, save_aspect_sentiment_record
 from typing import Optional
 import pandas as pd
 import io
 import torch
-import mimetypes
 import nltk
 from nltk.corpus import stopwords
-
-# Transformers/PEFT imports
+import spacy
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, pipeline
 from peft import PeftModel
 
@@ -24,12 +22,14 @@ _tokenizer = None
 _model = None
 _pipeline = None
 
-# Label mapping (based on your fine-tuning: 0=Negative, 1=Neutral, 2=Positive)
 LABEL_MAP = {
     "LABEL_0": "Negative",
     "LABEL_1": "Neutral",
     "LABEL_2": "Positive"
 }
+
+# Load spaCy for aspect extraction
+nlp = spacy.load("en_core_web_sm")
 
 # ==============================
 # 🧠 Load Model Once
@@ -70,6 +70,60 @@ def preprocess_text(text: str):
 
 
 # ==============================
+# 🧩 Aspect Extraction
+# ==============================
+def extract_aspects(text: str):
+    """Extract candidate aspects using noun phrases and named entities."""
+    doc = nlp(text)
+    aspects = set()
+    for chunk in doc.noun_chunks:
+        aspects.add(chunk.text.strip())
+    for ent in doc.ents:
+        aspects.add(ent.text.strip())
+    return list(aspects)
+
+
+# ==============================
+# 🎯 Aspect + Overall Sentiment (for a single text)
+# ==============================
+def analyze_aspects_with_overall(original_text: str):
+    pipe = load_model_once()
+
+    # Clean text for inference
+    cleaned = preprocess_text(original_text)
+    aspects = extract_aspects(cleaned)
+    results = []
+
+    
+
+    # ✅ Overall sentiment (use cleaned text, not undefined "text")
+    overall_res = pipe(cleaned)[0]
+    overall_label = LABEL_MAP.get(overall_res["label"], overall_res["label"])
+    overall_score = round(float(overall_res["score"]), 3)
+
+    # ✅ Aspect-level sentiment (use original text in prompt)
+    for aspect in aspects:
+        prompt = f"Aspect: {aspect}. Sentence: {original_text}"
+        res = pipe(prompt)[0]
+        label = LABEL_MAP.get(res["label"], res["label"])
+        score = round(float(res["score"]), 3)
+        results.append({
+            "aspect": aspect,
+            "aspect_sentiment": label,
+            "aspect_score": score
+        })
+
+    return {
+        "sentence": original_text,
+        "cleaned_sentence": cleaned,
+        "overall_sentiment": overall_label,
+        "overall_score": overall_score,
+        "aspects": results
+    }
+
+
+
+# ==============================
 # 🎯 Single Text Prediction
 # ==============================
 @router.post("/predict_single")
@@ -80,35 +134,35 @@ def predict_single(email: str = Form(...), text: str = Form(...)):
         raise HTTPException(status_code=400, detail="No text provided")
 
     try:
-        pipe = load_model_once()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Model load failed: {e}")
-
-    try:
         cleaned = preprocess_text(text)
-        res = pipe(cleaned, truncation=True)
-        print("🧠 Pipeline output:", res)
-        label = res[0]['label']
-        score = float(res[0]['score'])
-        readable_label = LABEL_MAP.get(label, label)
+        result = analyze_aspects_with_overall(text)
+
+        # Save both overall & aspect sentiments
+        save_sentiment_record(
+            email,
+            text,
+            cleaned,
+            result["overall_sentiment"],
+            result["overall_score"]
+        )
+        save_aspect_sentiment_record(
+            email=email,
+            sentence=result["sentence"],
+            aspects=result["aspects"],
+            overall_sentiment=result["overall_sentiment"],
+            overall_score=result["overall_score"]
+        )
+
+        return result
+
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Inference failed: {e}")
-
-    try:
-        save_sentiment_record(email, text, cleaned, readable_label, score)
-    except Exception as e:
-        print(f"⚠️ DB save failed: {e}")
-
-    return {
-        "original": text,
-        "cleaned": cleaned,
-        "label": readable_label,
-        "score": score
-    }
 
 
 # ==============================
-# 📂 Batch Prediction
+# 📂 Batch Prediction (with Aspect Support)
 # ==============================
 @router.post("/predict_batch")
 async def predict_batch(
@@ -118,74 +172,63 @@ async def predict_batch(
 ):
     try:
         print("📥 Received request for batch prediction")
-        print(f"📧 Email: {email}")
-        print(f"📄 Filename: {file.filename}")
         contents = await file.read()
-        print(f"📦 File size: {len(contents)} bytes")
-
-        # ✅ Robust File Format Handling
         filename = file.filename.lower()
-        try:
-            if filename.endswith(".csv"):
-                df = pd.read_csv(io.BytesIO(contents))
-                print("✅ File read as CSV")
-            elif filename.endswith((".xls", ".xlsx")):
-                df = pd.read_excel(io.BytesIO(contents), engine="openpyxl")
-                print("✅ File read as Excel")
-            else:
-                # Try auto-detecting format just in case
-                try:
-                    df = pd.read_csv(io.BytesIO(contents))
-                    print("⚙️ Auto-detected CSV format")
-                except Exception:
-                    try:
-                        df = pd.read_excel(io.BytesIO(contents), engine="openpyxl")
-                        print("⚙️ Auto-detected Excel format")
-                    except Exception:
-                        raise HTTPException(status_code=400, detail="Unsupported file format. Please upload CSV or Excel.")
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Could not parse file: {str(e)}")
 
-        print(f"📊 Columns found: {list(df.columns)}")
+        # Load file
+        if filename.endswith(".csv"):
+            df = pd.read_csv(io.BytesIO(contents))
+        elif filename.endswith((".xls", ".xlsx")):
+            df = pd.read_excel(io.BytesIO(contents), engine="openpyxl")
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported file format. Please upload CSV or Excel.")
 
-        # Require user to specify text column name
-        if not text_column:
+        if not text_column or text_column not in df.columns:
             raise HTTPException(
                 status_code=400,
                 detail=f"Please specify which column contains text data. Available columns: {list(df.columns)}"
             )
 
-        if text_column not in df.columns:
-            raise HTTPException(status_code=400, detail=f"Invalid column '{text_column}'. Available: {list(df.columns)}")
-
-        # Extract text data
         texts = df[text_column].astype(str).tolist()
-        print(f"🧾 Number of texts: {len(texts)}")
+        print(f"🧾 Processing {len(texts)} sentences...")
 
-        # Load model and predict
-        pipe = load_model_once()
-        cleaned = [preprocess_text(t) for t in texts]
-        res = pipe(cleaned, truncation=True)
+        all_results = []
+        for text in texts:
+            cleaned = preprocess_text(text)
+            result = analyze_aspects_with_overall(text)
 
-        # Extract label and score for each prediction
-        labels = [LABEL_MAP.get(r["label"], r["label"]) for r in res]
-        scores = [round(float(r["score"]), 4) for r in res]  # rounded for readability
+            # Save each result
+            save_sentiment_record(email, text, cleaned, result["overall_sentiment"], result["overall_score"])
+            save_aspect_sentiment_record(
+                email=email,
+                sentence=result["sentence"],
+                aspects=result["aspects"],
+                overall_sentiment=result["overall_sentiment"],
+                overall_score=result["overall_score"]
+            )
+            all_results.append(result)
 
-        # ✅ Final DataFrame with required columns
-        df_out = pd.DataFrame({
-            "original_text": texts,
-            "cleaned_text": cleaned,
-            "sentiment": labels,
-            "confidence_score": scores
-        })
+        # Flatten for preview
+        rows = []
+        for r in all_results:
+            for a in r["aspects"]:
+                rows.append({
+                    "Sentence": r["sentence"],
+                    "Aspect": a["aspect"],
+                    "Aspect Sentiment": a["aspect_sentiment"],
+                    "Aspect Score": a["aspect_score"],
+                    "Overall Sentiment": r["overall_sentiment"],
+                    "Overall Score": r["overall_score"]
+                })
 
-        print("✅ Batch prediction completed successfully")
+        df_out = pd.DataFrame(rows)
+        print("✅ Batch Aspect Analysis Complete")
 
-        # Return both summary and preview
         return {
-            "message": f"Processed {len(df_out)} rows successfully.",
-            "preview": df_out.head(10).to_dict(orient="records")
-        }
+                "message": f"Processed {len(all_results)} reviews successfully.",
+                "results": df_out.to_dict(orient="records")
+                }
+
 
     except HTTPException:
         raise

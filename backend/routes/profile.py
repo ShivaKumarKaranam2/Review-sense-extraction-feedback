@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from ..database import get_conn
 from ..models import ProfileUpdate
-
+from backend.database import get_user_stats
 router = APIRouter()
 
 @router.get("/profile")
@@ -47,3 +47,14 @@ def update_profile(payload: ProfileUpdate):
     conn.close()
 
     return {"message": "Profile updated successfully ✅"}
+
+
+@router.get("/user_stats")
+def user_stats(email: str):
+    try:
+        data = get_user_stats(email)
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch statistics: {e}")
+
+
