@@ -1,364 +1,10 @@
-# import streamlit as st
-# import pandas as pd
-# import requests
-# import plotly.express as px
-# from io import BytesIO
-
-# # ----------------------------------------------
-# # CONFIG
-# # ----------------------------------------------
-# BASE = "http://127.0.0.1:8000"
-
-# st.set_page_config(
-#     page_title="Infosys ReviewSense",
-#     layout="wide"
-# )
-
-# ACCENT = "#00A8FF"  # Neon blue
-
-# # ----------------------------------------------
-# # GLOBAL CSS (Glassmorphic UI)
-# # ----------------------------------------------
-# st.markdown(
-#     f"""
-#     <style>
-
-#         /* Background */
-#         body {{
-#             background: linear-gradient(135deg, #0A0A0A, #1A1A1A);
-#             color: white;
-#             font-family: 'Segoe UI';
-#         }}
-
-#         .block-container {{
-#             padding-top: 2rem;
-#         }}
-
-#         .glass-card {{
-#             background: rgba(255,255,255,0.06);
-#             padding: 25px;
-#             border-radius: 15px;
-#             border: 1px solid rgba(255,255,255,0.12);
-#             backdrop-filter: blur(12px);
-#             margin-bottom: 25px;
-#         }}
-
-#         .neon-title {{
-#             font-size: 36px;
-#             font-weight: 900;
-#             color: {ACCENT};
-#             margin-bottom: 15px;
-#             text-shadow: 0 0 12px {ACCENT};
-#         }}
-
-#         /* Buttons */
-#         .stButton>button {{
-#             background-color: {ACCENT} !important;
-#             color: white !important;
-#             padding: 8px 18px;
-#             border-radius: 6px;
-#             border: none;
-#             font-weight: 600;
-#         }}
-
-#         .stButton>button:hover {{
-#             background-color: #0077cc !important;
-#             transform: scale(1.03);
-#         }}
-
-#     </style>
-#     """,
-#     unsafe_allow_html=True
-# )
-
-# # -------------------------------------------------
-# # SESSION STATE
-# # -------------------------------------------------
-# if "email" not in st.session_state:
-#     st.session_state.email = None
-# if "reset_mode" not in st.session_state:
-#     st.session_state.reset_mode = False
-
-
-# # -------------------------------------------------
-# # AUTH PAGES
-# # -------------------------------------------------
-# def signup_page():
-#     st.markdown("<div class='neon-title'>Create Your Account</div>", unsafe_allow_html=True)
-
-#     with st.form("signup_form"):
-#         email = st.text_input("Email", key="su_email")
-#         pwd = st.text_input("Password", type="password", key="su_pwd")
-#         fullname = st.text_input("Full Name", key="su_full")
-#         age = st.number_input("Age", min_value=0, key="su_age")
-#         bio = st.text_area("Bio", key="su_bio")
-
-#         if st.form_submit_button("Sign Up"):
-#             payload = {
-#                 "email": email,
-#                 "password": pwd,
-#                 "full_name": fullname,
-#                 "age": age if age > 0 else None,
-#                 "bio": bio
-#             }
-#             r = requests.post(f"{BASE}/signup", json=payload)
-#             if r.status_code == 200:
-#                 st.success("🎉 Account created! Please sign in.")
-#             else:
-#                 st.error(r.json().get("detail", "Signup failed"))
-
-
-# def login_page():
-#     st.markdown("<div class='neon-title'>Welcome Back</div>", unsafe_allow_html=True)
-
-#     with st.form("login_form"):
-#         email = st.text_input("Email", key="li_email")
-#         pwd = st.text_input("Password", type="password", key="li_pwd")
-
-#         col1, col2 = st.columns(2)
-
-#         if col1.form_submit_button("Sign In"):
-#             r = requests.post(f"{BASE}/login", json={"email": email, "password": pwd})
-#             if r.status_code == 200:
-#                 st.session_state.email = email
-#                 st.rerun()
-#             else:
-#                 st.error(r.json().get("detail", "Login failed"))
-
-#         if col2.form_submit_button("Forgot Password?"):
-#             st.session_state.reset_mode = True
-#             st.rerun()
-
-
-# def forgot_password_page():
-#     st.markdown("<div class='neon-title'>Forgot Password</div>", unsafe_allow_html=True)
-
-#     with st.form("fp_form"):
-#         email = st.text_input("Registered email", key="fp_mail")
-
-#         if st.form_submit_button("Send Reset Token"):
-#             r = requests.post(f"{BASE}/forgot-password", json={"email": email})
-#             st.success("Reset token created! Check backend logs.")
-
-
-# def reset_password_page():
-#     st.markdown("<div class='neon-title'>Reset Password</div>", unsafe_allow_html=True)
-
-#     with st.form("reset_form"):
-#         email = st.text_input("Email", key="rp_email")
-#         token = st.text_input("Reset Token", key="rp_token")
-#         newpass = st.text_input("New Password", type="password", key="rp_new")
-
-#         if st.form_submit_button("Update Password"):
-#             r = requests.post(
-#                 f"{BASE}/reset-password",
-#                 json={"email": email, "token": token, "new_password": newpass},
-#             )
-#             if r.status_code == 200:
-#                 st.success("Password updated! Please login.")
-#                 st.session_state.reset_mode = False
-#             else:
-#                 st.error("Reset failed")
-
-
-# # -------------------------------------------------
-# # PROFILE + DASHBOARD
-# # -------------------------------------------------
-# def profile_page():
-#     st.markdown("<div class='neon-title'>My Profile</div>", unsafe_allow_html=True)
-
-#     email = st.session_state.email
-
-#     # Fetch profile
-#     prof = requests.get(f"{BASE}/profile", params={"email": email})
-#     if not prof.ok:
-#         st.error("Failed to load profile")
-#         return
-
-#     user = prof.json()
-
-#     # -------- Profile Form --------
-#     with st.form("profile_form"):
-#         full = st.text_input("Full Name", value=user.get("full_name", ""), key="pf_full")
-#         age = st.number_input("Age", min_value=0, value=user.get("age", 0), key="pf_age")
-#         bio = st.text_area("Bio", value=user.get("bio", ""), key="pf_bio")
-
-#         if st.form_submit_button("Update Profile"):
-#             payload = {"email": email, "full_name": full, "age": age, "bio": bio}
-#             r = requests.put(f"{BASE}/update_profile", json=payload)
-#             if r.ok:
-#                 st.success("Profile updated.")
-#             else:
-#                 st.error("Failed to update.")
-
-#     # -------- User Stats --------
-#     st.write("___")
-#     st.markdown("<div class='neon-title'>Your Sentiment Dashboard</div>", unsafe_allow_html=True)
-
-#     stats = requests.get(f"{BASE}/user_stats", params={"email": email})
-
-#     if not stats.ok:
-#         st.error("Failed to load sentiment stats.")
-#         return
-
-#     data = stats.json()
-
-#     if data["total_records"] == 0:
-#         st.info("No analysis records found yet.")
-#         return
-
-#     df = pd.DataFrame(data["records"])
-#     st.dataframe(df, use_container_width=True)
-
-#     # Sentiment summary
-#     col1, col2, col3, col4 = st.columns(4)
-#     col1.metric("Total Reviews", data["total_records"])
-#     col2.metric("Positive", sum(df["Overall Sentiment"] == "Positive"))
-#     col3.metric("Neutral", sum(df["Overall Sentiment"] == "Neutral"))
-#     col4.metric("Negative", sum(df["Overall Sentiment"] == "Negative"))
-
-#     # Charts
-#     pie = px.pie(df, names="Aspect Sentiment", title="Aspect Sentiment Distribution")
-#     st.plotly_chart(pie, use_container_width=True)
-
-#     bar = px.bar(df, x="Aspect", y="Aspect Score", color="Aspect Sentiment")
-#     st.plotly_chart(bar, use_container_width=True)
-
-#     # Download CSV
-#     csv = df.to_csv(index=False).encode("utf-8")
-#     st.download_button("Download CSV", csv, "sentiment_records.csv", "text/csv")
-
-
-# # -------------------------------------------------
-# # SINGLE REVIEW ANALYSIS
-# # -------------------------------------------------
-# def single_sentiment_page():
-#     st.markdown("<div class='neon-title'>Single Review Analysis</div>", unsafe_allow_html=True)
-
-#     with st.form("single_form"):
-#         text = st.text_area("Enter review text", key="single_txt")
-
-#         if st.form_submit_button("Analyze"):
-#             if not text.strip():
-#                 st.warning("Enter review text")
-#                 return
-
-#             payload = {"email": st.session_state.email, "text": text}
-#             r = requests.post(f"{BASE}/sentiment/predict_single", data=payload)
-
-#             if not r.ok:
-#                 st.error("Prediction failed")
-#                 return
-
-#             result = r.json()
-#             st.success("Analysis complete!")
-
-#             # Convert to table
-#             df = pd.DataFrame(result["aspects"])
-#             st.dataframe(df, use_container_width=True)
-
-#             # Overall Sentiment Bar
-#             bar = px.bar(
-#                 x=["Positive", "Neutral", "Negative"],
-#                 y=[
-#                     result["overall_score"] if result["overall_sentiment"] == "Positive" else 0,
-#                     result["overall_score"] if result["overall_sentiment"] == "Neutral" else 0,
-#                     result["overall_score"] if result["overall_sentiment"] == "Negative" else 0,
-#                 ],
-#                 title="Overall Sentiment Strength"
-#             )
-#             st.plotly_chart(bar, use_container_width=True)
-
-#             # Aspect Pie
-#             pie = px.pie(df, names="aspect_sentiment", title="Aspect Sentiment Split")
-#             st.plotly_chart(pie, use_container_width=True)
-
-
-# # -------------------------------------------------
-# # BATCH ANALYSIS
-# # -------------------------------------------------
-
-# def batch_sentiment_page():
-#     st.markdown("<div class='neon-title'>Batch Review Analysis</div>", unsafe_allow_html=True)
-
-#     file = st.file_uploader("Upload CSV or Excel", type=["csv", "xlsx"])
-
-#     if file:
-#         df = pd.read_csv(file) if file.name.endswith(".csv") else pd.read_excel(file)
-#         st.dataframe(df.head(), use_container_width=True)
-
-#         column = st.selectbox("Select Review Text Column", df.columns)
-
-#         if st.button("Run Batch Analysis"):
-#             files = {
-#                 "file": (file.name, file.getvalue(), file.type)
-#             }
-
-#             data = {
-#                 "email": st.session_state.email,
-#                 "text_column": column
-#             }
-
-#             # MUST use correct route
-#             r = requests.post(f"{BASE}/sentiment/predict_batch", files=files, data=data)
-
-#             if not r.ok:
-#                 st.error(f"Batch failed: {r.text}")
-#                 return
-
-#             out = r.json()
-#             df_out = pd.DataFrame(out["results"])
-#             st.success("Batch Completed Successfully!")
-#             st.dataframe(df_out, use_container_width=True)
-
-#             # Charts
-#             pie = px.pie(df_out, names="Aspect Sentiment", title="Aspect Sentiment Distribution")
-#             st.plotly_chart(pie, use_container_width=True)
-
-#             bar = px.bar(df_out, x="Aspect", y="Aspect Score", color="Aspect Sentiment")
-#             st.plotly_chart(bar, use_container_width=True)
-
-#             # Download
-#             csv = df_out.to_csv(index=False).encode("utf-8")
-#             st.download_button("Download CSV", csv, "batch_results.csv", "text/csv")
-
-
-# # -------------------------------------------------
-# # ROUTING
-# # -------------------------------------------------
-# if st.session_state.email is None:
-
-#     if st.session_state.reset_mode:
-#         reset_password_page()
-
-#     else:
-#         screen = st.sidebar.radio("Menu", ["Sign In", "Sign Up", "Forgot Password"])
-
-#         if screen == "Sign In":
-#             login_page()
-#         elif screen == "Sign Up":
-#             signup_page()
-#         else:
-#             forgot_password_page()
-
-# else:
-#     screen = st.sidebar.radio("Menu", ["Profile", "Single Review Analysis", "Batch Analysis", "Logout"])
-
-#     if screen == "Profile":
-#         profile_page()
-#     elif screen == "Single Review Analysis":
-#         single_sentiment_page()
-#     elif screen == "Batch Analysis":
-#         batch_sentiment_page()
-#     elif screen == "Logout":
-#         st.session_state.email = None
-#         st.rerun()
-
 import streamlit as st
 import pandas as pd
 import requests
 import plotly.express as px
 import plotly.graph_objects as go
+ACCENT = "#00A8FF"
+
 
 # ----------------------------------------------
 # CONFIG
@@ -549,6 +195,18 @@ section[data-testid="stSidebar"] h2 {
     box-shadow: 0 0 15px rgba(99, 102, 241, 0.3);
     transform: translateX(8px);
 }
+/* Prevent long sidebar labels from wrapping */
+.stRadio > div > label {
+    white-space: nowrap !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Increase space so labels fit in single line */
+section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] {
+    min-width: 230px !important;
+}
+
 
 </style>
 """, unsafe_allow_html=True)
@@ -938,6 +596,52 @@ def single_sentiment_page():
                 st.plotly_chart(fig_gauge, use_container_width=True)
                 st.markdown("</div>", unsafe_allow_html=True)
 
+        # ===========================
+        #   👍 👎 USER FEEDBACK
+        # ===========================
+
+        st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+        st.markdown("### ✅ Was this prediction correct? Help improve the model")
+
+        fb_col1, fb_col2 = st.columns(2)
+
+        with fb_col1:
+            if st.button("👍 Thumbs Up"):
+                feedback_payload = {
+                    "email": st.session_state.email,
+                    "sentence": result["sentence"],
+                    "aspect": "OVERALL",
+                    "model_sentiment": result["overall_sentiment"],
+                    "model_score": result["overall_score"],
+                    "feedback": "LIKE"
+                }
+
+                res = requests.post(f"{BASE}/feedback/save", data=feedback_payload)
+
+                if res.ok:
+                    st.success("✅ Thanks! Your feedback was saved successfully.")
+                else:
+                    st.error("❌ Failed to save feedback")
+
+        with fb_col2:
+            if st.button("👎 Thumbs Down"):
+                feedback_payload = {
+                    "email": st.session_state.email,
+                    "sentence": result["sentence"],
+                    "aspect": "OVERALL",
+                    "model_sentiment": result["overall_sentiment"],
+                    "model_score": result["overall_score"],
+                    "feedback": "DISLIKE"
+                }
+
+                res = requests.post(f"{BASE}/feedback/save", data=feedback_payload)
+
+                if res.ok:
+                    st.warning("⚠️ Thanks! This will help the model learn.")
+                else:
+                    st.error("❌ Failed to save feedback")
+
+        st.markdown("</div>", unsafe_allow_html=True)
 
 # -------------------------------------------------
 # BATCH SENTIMENT
@@ -981,7 +685,6 @@ def batch_sentiment_page():
     if st.session_state.batch_results is not None:
         df_out = st.session_state.batch_results
 
-        
         st.markdown("### Results")
         st.dataframe(df_out, use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
@@ -1030,31 +733,294 @@ def batch_sentiment_page():
             "text/csv"
         )
 
+def active_learning_page():
+    st.markdown("<div class='modern-title'>Active Learning</div>", unsafe_allow_html=True)    
+    st.info("Improve the model by correcting wrong sentiment predictions.")
+
+    # Fetch predictions
+    r = requests.get(f"{BASE}/active_learning/get", params={"email": st.session_state.email})
+    if not r.ok:
+        st.error("Failed to fetch predictions")
+        return
+
+    data = r.json()
+    if len(data) == 0:
+        st.info("No predictions found. Do some Single or Batch analysis first!")
+        return
+
+    df = pd.DataFrame(data)
+
+    
+
+    # Show filtered table
+    st.subheader("📊 Model Predictions")
+    st.dataframe(df, use_container_width=True)
+
+    st.write("---")
+    st.subheader("🔧 Correct Predictions")
+    # --------------------------------------------
+    # 🔍 SEARCH BAR — filter by sentence or aspect
+    # --------------------------------------------
+    st.write("### 🔎 Search your predictions")
+    search = st.text_input(
+        "Search by sentence or aspect",
+        placeholder="Type: battery, camera, delivery, speed..."
+    )
+
+    if search.strip():
+        df = df[
+            df["sentence"].str.contains(search, case=False, na=False) |
+            df["aspect"].str.contains(search, case=False, na=False)
+        ]
+
+        st.success(f"Found {len(df)} matching results")
+
+        if len(df) == 0:
+            return
+    # -------------------------------------------------
+    # Sentiment Correction Loop (same as before)
+    # -------------------------------------------------
+    for idx, row in df.iterrows():
+        st.markdown(f"### ➤ Sentence: `{row['sentence']}`")
+        st.markdown(f"**Aspect:** {row['aspect']}")
+        st.markdown(f"**Original Sentiment:** {row['overall_sentiment']} ({row['overall_score']*100:.1f}%)")
+
+        corrected = st.selectbox(
+            f"Correct sentiment for: {row['aspect']}",
+            ["Positive", "Neutral", "Negative"],
+            index=["Positive", "Neutral", "Negative"].index(row["overall_sentiment"]),
+            key=f"correct_{idx}"
+        )
+
+        if st.button(f"Save Correction #{idx}", key=f"save_correct_{idx}"):
+            payload = {
+                "email": st.session_state.email,
+                "sentence": row['sentence'],
+                "aspect": row['aspect'],
+                "original_sentiment": row['aspect_sentiment'],
+                "original_score": row['aspect_score'],
+                "corrected_sentiment": corrected
+            }
+
+            res = requests.post(f"{BASE}/active_learning/save", data=payload)
+
+            if res.ok:
+                st.success(f"Correction saved for aspect: {row['aspect']}")
+            else:
+                st.error("Failed to save correction")
+
+
+
+def admin_dashboard_page():
+    st.markdown("<div class='neon-title'>🛠️ Admin Control Panel</div>", unsafe_allow_html=True)
+    st.caption("This dashboard is visible only to platform administrators.")
+
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(
+        ["👥 User Management", "📊 Global Sentiment Analytics", 
+         "🎯 Active Learning Corrections", "📁 Dataset Explorer", "📝 System Logs"]
+    )
+
+    # -----------------------------------
+    # 👥 USER MANAGEMENT
+    # -----------------------------------
+    with tab1:
+        st.subheader("Registered Users")
+
+        users = requests.get(f"{BASE}/admin/users")
+        if users.ok:
+            df_users = pd.DataFrame(users.json())
+            search_user = st.text_input("Search users by email/name")
+
+            if search_user:
+                df_users = df_users[
+                    df_users["email"].str.contains(search_user, case=False) |
+                    df_users["full_name"].str.contains(search_user, case=False)
+                ]
+
+            st.dataframe(df_users, use_container_width=True)
+
+            # Delete user
+            del_email = st.text_input("Enter email to delete user")
+            if st.button("Delete User"):
+                res = requests.delete(f"{BASE}/admin/delete_user?email={del_email}")
+                if res.ok:
+                    st.success(f"User {del_email} removed.")
+                else:
+                    st.error("Failed to delete user")
+        else:
+            st.error("Failed to load users")
+
+    # -----------------------------------
+    # 📊 GLOBAL SENTIMENT ANALYTICS
+    # -----------------------------------
+    with tab2:
+        st.subheader("Platform-wide Sentiment Metrics")
+
+        stats = requests.get(f"{BASE}/admin/global_stats")
+        if stats.ok:
+            data = stats.json()
+
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Total Users", data.get("total_users", 0))
+            c2.metric("Total Predictions", data.get("total_predictions", 0))
+            c3.metric("Total Corrections", data.get("total_corrections", 0))
+
+            df_all = pd.DataFrame(data["records"])
+
+            pie = px.pie(df_all, names="sentiment", title="Overall Sentiment Split")
+            st.plotly_chart(pie, use_container_width=True)
+
+            if "aspect" in df_all:
+                bar = px.bar(df_all, x="aspect", title="Most Common Aspects")
+                st.plotly_chart(bar, use_container_width=True)
+
+            csv = df_all.to_csv().encode("utf-8")
+            st.download_button("Download Full Dataset", csv, "platform_data.csv")
+
+        else:
+            st.error("Unable to fetch analytics")
+
+    # -----------------------------------
+    # 🎯 ACTIVE LEARNING PANEL
+    # -----------------------------------
+    with tab3:
+        st.subheader("Active Learning – User Corrections")
+
+        cli = requests.get(f"{BASE}/admin/all_corrections")
+        if cli.ok:
+            df_corr = pd.DataFrame(cli.json())
+            st.dataframe(df_corr, use_container_width=True)
+
+            csv = df_corr.to_csv(index=False).encode("utf-8")
+            st.download_button("Download Corrections", csv, "active_learning_corrections.csv")
+        else:
+            st.error("Failed to fetch corrections")
+
+    # -----------------------------------
+    # 📁 DATASET EXPLORER
+    # -----------------------------------
+    with tab4:
+        st.subheader("Uploaded Datasets")
+
+        files = requests.get(f"{BASE}/admin/list_datasets")
+        if files.ok:
+            df_files = pd.DataFrame(files.json())
+            st.dataframe(df_files, use_container_width=True)
+        else:
+            st.error("Could not load dataset info")
+
+    # -----------------------------------
+    # 📝 LOGS
+    # -----------------------------------
+    with tab5:
+        st.subheader("System Logs")
+
+        # Filters
+        colA, colB = st.columns(2)
+        limit = colA.number_input("Max Records", min_value=20, max_value=1000, value=200)
+        search_logs = colB.text_input("Search logs...", placeholder="email, route, action, timestamp...")
+
+        # Fetch logs from backend
+        logs = requests.get(f"{BASE}/logs/all", params={"limit": limit})
+
+        if logs.ok:
+            logs_data = logs.json()
+
+            if len(logs_data) == 0:
+                st.info("No log records found in database.")
+                return
+
+            df_logs = pd.DataFrame(logs_data)
+
+            # Apply search filter
+            if search_logs.strip():
+                df_logs = df_logs[
+                    df_logs.apply(
+                        lambda row: row.astype(str).str.contains(search_logs, case=False, na=False),
+                        axis=1
+                    )
+                ]
+
+                st.success(f"🔍 Found {len(df_logs)} matching log records")
+
+                if len(df_logs) == 0:
+                    return
+
+            # Display the logs table
+            st.dataframe(df_logs, use_container_width=True)
+
+            # Download logs
+            csv = df_logs.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                "⬇ Download Logs CSV",
+                csv,
+                "system_logs.csv",
+                "text/csv"
+            )
+
+            st.write("---")
+            st.subheader("📌 Recent Log Activity Timeline")
+
+            # Timeline (latest 40 logs only)
+            df_time = df_logs.head(40) if len(df_logs) > 40 else df_logs
+
+            for _, row in df_time.iterrows():
+                st.markdown(
+                    f"""
+                    <div style='padding:10px;margin-bottom:6px;border-left:3px solid {ACCENT};background:#1a1a1a;border-radius:6px'>
+                        <b>{row['timestamp']}</b><br>
+                        👤 <b>User:</b> {row.get('email','-')}<br>
+                        🛠 <b>Route:</b> {row.get('route','-')}<br>
+                        🎯 <b>Action:</b> {row.get('action','-')}<br>
+                        ✍ <b>Message:</b> {row.get('message','-')}<br>
+                        🧩 <b>Payload:</b> <code>{row.get('payload','')}</code>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+
+        else:
+            st.error("❌ Failed to load logs from backend")
+
 
 # -------------------------------------------------
 # ROUTING
 # -------------------------------------------------
+
+# ---------------- SIDEBAR NAV ----------------
 if st.session_state.email is None:
 
     if st.session_state.reset_mode:
         reset_password_page()
-    else:
-        screen = st.sidebar.radio("Menu", ["Sign In", "Sign Up", "Forgot Password"])
 
-        if screen == "Sign In":
-            login_page()
-        elif screen == "Sign Up":
-            signup_page()
-        else:
-            forgot_password_page()
+    screen = st.sidebar.radio("Menu", ["Sign In", "Sign Up", "Forgot Password"])
+
+    if screen == "Sign In":
+        login_page()
+    elif screen == "Sign Up":
+        signup_page()
+    else:
+        forgot_password_page()
 
 else:
-    screen = st.sidebar.radio("Menu", [
-        "Profile",
-        "Single Review Analysis",
-        "Batch Analysis",
-        "Logout"
-    ])
+    # LOGGED IN
+    if st.session_state.email == "admin@springboard.com":
+        screen = st.sidebar.radio("Menu", [
+            "Profile",
+            "Single Review Analysis",
+            "Batch Analysis",
+            "Active Learning",
+            "Admin Dashboard",
+            "Logout"
+        ])
+    else:
+        screen = st.sidebar.radio("Menu", [
+            "Profile",
+            "Single Review Analysis",
+            "Batch Analysis",
+            "Active Learning",
+            "Logout"
+        ])
 
     if screen == "Profile":
         profile_page()
@@ -1062,6 +1028,10 @@ else:
         single_sentiment_page()
     elif screen == "Batch Analysis":
         batch_sentiment_page()
+    elif screen == "Active Learning":
+        active_learning_page()
+    elif screen == "Admin Dashboard":
+        admin_dashboard_page()
     elif screen == "Logout":
         st.session_state.email = None
         st.rerun()

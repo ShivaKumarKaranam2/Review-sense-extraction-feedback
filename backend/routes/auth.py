@@ -3,6 +3,7 @@ from backend.models import SignupModel, LoginModel, ResetRequestModel, ResetConf
 from backend.database import init_db, user_exists, add_user, get_user_password, set_reset_token, get_reset_token, update_password
 from backend.utils import hash_password, verify_password, generate_token
 from backend.utils import hash_password as make_hashes
+from backend.database import save_log
 
 router = APIRouter()
 init_db()
@@ -20,13 +21,18 @@ def signup(payload: SignupModel):
         
         print("✅ Adding user to DB")
         add_user(payload.email, hashed, payload.full_name, payload.age, payload.bio)
+        save_log(payload.email, "/signup", "USER_CREATION", "User created successfully")
         
         print("✅ Signup completed successfully")
+
         return {"message": "Account created"}
+
 
     except Exception as e:
         print("❌ Signup error:", e)
         raise HTTPException(status_code=500, detail=str(e))
+    
+    
 
 
 @router.post("/login")
@@ -36,6 +42,7 @@ def login(payload: LoginModel):
     stored = get_user_password(payload.email)
     if not stored or not verify_password(payload.password, stored):
         raise HTTPException(status_code=401, detail="Invalid credentials")
+    save_log(payload.email, "/login", "USER_LOGIN", "User logged in successfully")
     # for now, return simple success response (or you can add JWT here)
     return {"message": "Login successful"}
 

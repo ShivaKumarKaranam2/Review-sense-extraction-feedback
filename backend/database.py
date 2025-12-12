@@ -38,7 +38,7 @@ def init_db():
 
     # Table for Aspect-Based Sentiment Analysis
     c.execute('''
-    CREATE TABLE IF NOT EXISTS aspect_sentiment_records (
+    CREATE TABLE IF NOT EXISTS aspect_sentiment_records2 (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         email TEXT NOT NULL,
         sentence TEXT NOT NULL,
@@ -51,9 +51,65 @@ def init_db():
         FOREIGN KEY(email) REFERENCES users(email)
     )
     ''')
+
+    # Table for Active Learning Corrections
+    c.execute('''
+    CREATE TABLE IF NOT EXISTS active_learning (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT NOT NULL,
+        sentence TEXT NOT NULL,
+        aspect TEXT NOT NULL,
+        original_sentiment TEXT,
+        original_score REAL,
+        corrected_sentiment TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(email) REFERENCES users(email)
+    )
+    ''')
+
+    c.execute('''
+    CREATE TABLE IF NOT EXISTS uploaded_datasets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL,
+    filename TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(email) REFERENCES users(email)
+    )
+    ''')
+    c.execute('''
+    CREATE TABLE IF NOT EXISTS system_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT,
+        route TEXT,
+        action TEXT,
+        message TEXT,
+        payload TEXT,
+        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    ''')
+    # ----------------------------------------
+    # User Feedback on Predictions
+    # ----------------------------------------
+    c.execute('''
+    CREATE TABLE IF NOT EXISTS user_feedback (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT NOT NULL,
+        sentence TEXT NOT NULL,
+        aspect TEXT,
+        model_sentiment TEXT,
+        model_score REAL,
+        feedback TEXT CHECK(feedback IN ('LIKE', 'DISLIKE')),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(email) REFERENCES users(email)
+    )
+    ''')
+
+
+
     conn.commit()
     conn.close()
-
+    
 # helper functions interacting with DB
 def user_exists(email: str) -> bool:
     conn = get_conn()
@@ -142,7 +198,7 @@ def save_aspect_sentiment_record(email: str, sentence: str, aspects: list, overa
 
     for a in aspects:
         c.execute('''
-        INSERT INTO aspect_sentiment_records 
+        INSERT INTO aspect_sentiment_records2 
         (email, sentence, aspect, aspect_sentiment, aspect_score, overall_sentiment, overall_score)
         VALUES (?, ?, ?, ?, ?, ?, ?)
         ''', (
@@ -191,3 +247,58 @@ def get_user_stats(email: str):
         "total_records": len(stats),
         "records": stats
     }
+
+def get_aspect_predictions(email: str):
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT sentence, aspect, aspect_sentiment, aspect_score, 
+               overall_sentiment, overall_score
+        FROM aspect_sentiment_records2
+        WHERE email = ?
+        ORDER BY created_at DESC
+    """, (email,))
+
+    rows = [dict(r) for r in cur.fetchall()]
+    conn.close()
+    return rows
+
+
+def save_log(email: str, route: str, action: str, message: str, payload: str = None):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(
+        '''
+        INSERT INTO system_logs (email, route, action, message, payload)
+        VALUES (?, ?, ?, ?, ?)
+        ''',
+        (email, route, action, message, payload)
+    )
+    conn.commit()
+    conn.close()
+
+
+def fetch_logs(limit: int = 100):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT email, route, action, message, payload, timestamp FROM system_logs ORDER BY timestamp DESC LIMIT ?",
+        (limit,)
+    )
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def fetch_user_logs(email: str):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT route, action, message, payload, timestamp FROM system_logs WHERE email=? ORDER BY timestamp DESC",
+        (email,)
+    )
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+

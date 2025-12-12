@@ -10,6 +10,7 @@ from nltk.corpus import stopwords
 import spacy
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, pipeline
 from peft import PeftModel
+from backend.database import save_log
 
 router = APIRouter()
 
@@ -91,7 +92,7 @@ def analyze_aspects_with_overall(original_text: str):
 
     # Clean text for inference
     cleaned = preprocess_text(original_text)
-    aspects = extract_aspects(cleaned)
+    aspects = extract_aspects(original_text)
     results = []
 
     
@@ -135,7 +136,8 @@ def predict_single(email: str = Form(...), text: str = Form(...)):
 
     try:
         cleaned = preprocess_text(text)
-        result = analyze_aspects_with_overall(text)
+        
+        result = analyze_aspects_with_overall(cleaned)
 
         # Save both overall & aspect sentiments
         save_sentiment_record(
@@ -152,14 +154,97 @@ def predict_single(email: str = Form(...), text: str = Form(...)):
             overall_sentiment=result["overall_sentiment"],
             overall_score=result["overall_score"]
         )
+        save_log(
+            email=email,
+            route="/predict_single",
+            action="SINGLE_PREDICTION",
+            message=f"Prediction: {result['overall_sentiment']} ({round(result['overall_score'],3)})",
+            payload=text
+        )
 
         return result
-
+        
     except Exception as e:
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Inference failed: {e}")
 
+
+# # ==============================
+# # 📂 Batch Prediction (with Aspect Support)
+# # ==============================
+# @router.post("/predict_batch")
+# async def predict_batch(
+#     email: str = Form(...),
+#     file: UploadFile = File(...),
+#     text_column: Optional[str] = Form(None)
+# ):
+#     try:
+#         print("📥 Received request for batch prediction")
+#         contents = await file.read()
+#         filename = file.filename.lower()
+
+#         # Load file
+#         if filename.endswith(".csv"):
+#             df = pd.read_csv(io.BytesIO(contents))
+#         elif filename.endswith((".xls", ".xlsx")):
+#             df = pd.read_excel(io.BytesIO(contents), engine="openpyxl")
+#         else:
+#             raise HTTPException(status_code=400, detail="Unsupported file format. Please upload CSV or Excel.")
+
+#         if not text_column or text_column not in df.columns:
+#             raise HTTPException(
+#                 status_code=400,
+#                 detail=f"Please specify which column contains text data. Available columns: {list(df.columns)}"
+#             )
+
+#         texts = df[text_column].astype(str).tolist()
+#         print(f"🧾 Processing {len(texts)} sentences...")
+
+#         all_results = []
+#         for text in texts:
+#             cleaned = preprocess_text(text)
+#             result = analyze_aspects_with_overall(text)
+
+#             # Save each result
+#             save_sentiment_record(email, text, cleaned, result["overall_sentiment"], result["overall_score"])
+#             save_aspect_sentiment_record(
+#                 email=email,
+#                 sentence=result["sentence"],
+#                 aspects=result["aspects"],
+#                 overall_sentiment=result["overall_sentiment"],
+#                 overall_score=result["overall_score"]
+#             )
+#             all_results.append(result)
+
+#         # Flatten for preview
+#         rows = []
+#         for r in all_results:
+#             for a in r["aspects"]:
+#                 rows.append({
+#                     "Sentence": r["sentence"],
+#                     "Aspect": a["aspect"],
+#                     "Aspect Sentiment": a["aspect_sentiment"],
+#                     "Aspect Score": a["aspect_score"],
+#                     "Overall Sentiment": r["overall_sentiment"],
+#                     "Overall Score": r["overall_score"]
+#                 })
+
+#         df_out = pd.DataFrame(rows)
+#         print("✅ Batch Aspect Analysis Complete")
+
+#         return {
+#                 "message": f"Processed {len(all_results)} reviews successfully.",
+#                 "results": df_out.to_dict(orient="records")
+#                 }
+
+
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         import traceback
+#         traceback.print_exc()
+#         raise HTTPException(status_code=500, detail=f"Internal error: {e}")
 
 # ==============================
 # 📂 Batch Prediction (with Aspect Support)
@@ -172,16 +257,41 @@ async def predict_batch(
 ):
     try:
         print("📥 Received request for batch prediction")
+
         contents = await file.read()
         filename = file.filename.lower()
 
-        # Load file
+        # 🔥 SAVE FILE FIRST
+        from backend.database import get_conn
+        import os
+
+        user_dir = os.path.join("user_data", email.replace("@", "_at_"))
+        os.makedirs(user_dir, exist_ok=True)
+
+        saved_path = os.path.join(user_dir, file.filename)
+        with open(saved_path, "wb") as f:
+            f.write(contents)
+
+        # 🔥 Store DB record
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO uploaded_datasets (email, filename, file_path)
+            VALUES (?, ?, ?)
+        """, (email, file.filename, saved_path))
+        conn.commit()
+
+        # -------------------------
+        # Load file into dataframe
+        # -------------------------
         if filename.endswith(".csv"):
             df = pd.read_csv(io.BytesIO(contents))
         elif filename.endswith((".xls", ".xlsx")):
             df = pd.read_excel(io.BytesIO(contents), engine="openpyxl")
         else:
-            raise HTTPException(status_code=400, detail="Unsupported file format. Please upload CSV or Excel.")
+            raise HTTPException(status_code=400,
+                detail="Unsupported file format. Please upload CSV or Excel."
+            )
 
         if not text_column or text_column not in df.columns:
             raise HTTPException(
@@ -195,10 +305,12 @@ async def predict_batch(
         all_results = []
         for text in texts:
             cleaned = preprocess_text(text)
-            result = analyze_aspects_with_overall(text)
+            result = analyze_aspects_with_overall(cleaned)
 
-            # Save each result
-            save_sentiment_record(email, text, cleaned, result["overall_sentiment"], result["overall_score"])
+            save_sentiment_record(email, text, cleaned,
+                                  result["overall_sentiment"],
+                                  result["overall_score"])
+
             save_aspect_sentiment_record(
                 email=email,
                 sentence=result["sentence"],
@@ -223,12 +335,18 @@ async def predict_batch(
 
         df_out = pd.DataFrame(rows)
         print("✅ Batch Aspect Analysis Complete")
+        save_log(
+            email,
+            "/predict_batch",
+            "BATCH_PREDICTION",
+            f"{len(all_results)} reviews processed"
+        )
+
 
         return {
-                "message": f"Processed {len(all_results)} reviews successfully.",
-                "results": df_out.to_dict(orient="records")
-                }
-
+            "message": f"Processed {len(all_results)} reviews successfully.",
+            "results": df_out.to_dict(orient="records")
+        }
 
     except HTTPException:
         raise
